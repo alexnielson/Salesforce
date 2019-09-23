@@ -33,11 +33,9 @@ rm(dsn_salesforce)
 
 # Function Definitions
 
-
-
 # Execution
 
-## Entity Names
+## Account Table
 
 ```{r}
 entity_names <- 
@@ -49,16 +47,51 @@ entity_names <-
     FROM Account")
 ```
 
-## User Names
-
 ```{r}
-user_names <- 
+lg_names <- 
   dbGetQuery(
     odbc_sf,
-    "SELECT
-      Id   AS user_id,
-      Name AS user_name
-    FROM User")
+    "SELECT 
+      a.Name          AS entity_name,
+      r.DeveloperName AS govt_type
+    FROM Account AS a
+    LEFT JOIN RecordType AS r
+    ON a.RecordTypeID = r.Id
+    Where RecordTypeID IN (
+      SELECT Id
+      FROM RecordType
+      WHERE DeveloperName IN (
+        'AOG',
+        'City',
+        'Community_Reinvestment_Agency',
+        'Conservation_District',
+        'County',
+        'District_Health',
+        'Educational_Foundation',
+        'Financial_Institution',
+        'Housing',
+        'Independent_Quasi_State_Entity',
+        'Institute_of_Higher_Education',
+        'Interlocal',
+        'Local_and_Special_Service_District',
+        'Mental_Health',
+        'Non_Profits',
+        'Redevelopment_Agency_Project_Area',
+        'School_District_or_Charter_School',
+        'State_Agency',
+        'Town',
+        'Justice_Court'))
+    AND a.Name <> 'test city 2'")
+```
+
+## RecordType Table
+
+```{r}
+record_type <- 
+  dbGetQuery(
+    odbc_sf,
+    "SELECT DISTINCT DeveloperName
+    FROM RecordType")
 ```
 
 ## Transparency_Reporting_c
@@ -104,6 +137,24 @@ transparency_reporting__c_hd <-
       Status__c_hst
     FROM Transparency_Reporting__c_hd") %>% 
   left_join(user_names, by = c("created_by" = "user_id"))
+```
+
+## User Names
+
+```{r}
+user_names <- 
+  dbGetQuery(
+    odbc_sf,
+    "SELECT
+      Id   AS user_id,
+      Name AS user_name
+    FROM User")
+```
+
+# Workspace
+
+```{r}
+
 ```
 
 # DBMS Disconnection
