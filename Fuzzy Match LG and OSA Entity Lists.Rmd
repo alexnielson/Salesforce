@@ -1,0 +1,186 @@
+---
+title: "Fuzzy Match LG & OSA Entity Lists"
+author: "Michael Jensen"
+output: html_notebook
+---
+# Program Description
+
+**Purpose**
+
+Compare the LG's list of entities, obtained by the annual entity registration process, with OSA's list of entities to identify the differences.
+
+**Input(s)**
+
+```{r}
+dsn_sf  <- "Salesforce"
+```
+
+**Output(s)**
+
+A .csv file containing:
+
+* 
+
+
+# Libraries and Data Sources
+
+```{r}
+library(fuzzyjoin)
+library(odbc)
+library(tidyverse)
+
+odbc_sf <- dbConnect(odbc::odbc(), dsn_sf)
+rm(dsn_sf)
+
+lg_registry <- 
+  read_csv(
+    "C:/Users/mjensen1/Downloads/Entity Registry Tentative Data_9-13-19.csv")
+```
+
+# Function Definitions
+
+## Argument Definitions
+
+```{r, eval=FALSE}
+
+```
+
+
+# Execution
+
+## LG Entities
+
+Clean-up:
+
+```{r}
+# lg_registry <-
+#   lg_entities %>%
+#   rename(entity_type = `Entity Type`,
+#          entity_name = `Entity Name`)
+
+lg_registry <- 
+  lg_registry %>% 
+  filter(`Entity Name` != "Test", `Entity Name` != ",mnn")
+
+lg_registry$`Entity Name` <- 
+  str_to_title(lg_registry$`Entity Name`)
+
+lg_entity_type <- 
+  lg_registry %>% 
+  distinct(`Entity Type`) %>% 
+  arrange(`Entity Type`)
+
+lg_entities <- 
+  lg_registry %>% 
+  select(`Entity Name`, `Entity Type`)
+
+# invalid_entity_type <- 
+#   lg_entities %>% 
+#   filter(entity_type == "Not Sure" | is.na(entity_type))
+```
+
+## OSA Entities
+
+```{r, eval=FALSE}
+sf_entity_type <- 
+  dbGetQuery(
+    odbc_sf,
+    "SELECT DISTINCT DeveloperName AS entity_type
+    FROM RecordType") %>% 
+  arrange(entity_type)
+```
+
+```{r}
+sf_entities <- 
+  dbGetQuery(
+    odbc_sf,
+    "SELECT 
+      a.Name          AS entity_name,
+      r.DeveloperName AS entity_type
+    FROM Account AS a
+    LEFT JOIN RecordType AS r
+    ON a.RecordTypeID = r.Id
+    Where RecordTypeID IN (
+      SELECT Id
+      FROM RecordType
+      WHERE DeveloperName IN (
+        'AOG',
+        'City',
+        'Community_Reinvestment_Agency',
+        'Conservation_District',
+        'County',
+        'District_Health',
+        'Educational_Foundation',
+        'Financial_Institution',
+        'Housing',
+        'Independent_Quasi_State_Entity',
+        'Institute_of_Higher_Education',
+        'Interlocal',
+        'Local_and_Special_Service_District',
+        'Mental_Health',
+        'Non_Profits',
+        'Redevelopment_Agency_Project_Area',
+        'School_District_or_Charter_School',
+        'State_Agency',
+        'Town',
+        'Justice_Court'))
+    AND a.Name <> 'test city 2'")
+
+sf_entities$entity_name <- str_to_title(sf_entities$entity_name)
+```
+
+## Analysis
+
+Check for duplicates:
+
+```{r}
+lg_duplicates_registry <- 
+    lg_registry[duplicated(lg_registry), ]
+
+lg_duplicates_names <- 
+  lg_entities[duplicated(lg_entities), ]
+
+sf_duplicates <- 
+  sf_entities[duplicated(sf_entities), ]
+
+lg_entities <- 
+  lg_entities[!duplicated(lg_entities), ]
+```
+
+```{r}
+lg_entities <- 
+  lg_entities %>% 
+  rename(entity_name = `Entity Name`, entity_type = `Entity Type`)
+
+match_anti_lg <- 
+  stringdist_anti_join(
+    lg_entities,
+    sf_entities,
+    by = "entity_name",
+    max_dist = 4)
+
+match_anti_osa <- 
+  stringdist_anti_join(
+    sf_entities,
+    lg_entities,
+    by = "entity_name")
+  
+match_left_lg <- 
+  stringdist_left_join(
+    lg_entities,
+    sf_entities,
+    by = "entity_name") %>% 
+  select(
+    lg_name  = entity_name.x,
+    osa_name = entity_name.y,
+    lg_type  = entity_type.x,
+    osa_type = entity_type.y)
+```
+
+
+
+# DBMS Disconnection
+
+```{r}
+dbDisconnect(odbc_sf)
+```
