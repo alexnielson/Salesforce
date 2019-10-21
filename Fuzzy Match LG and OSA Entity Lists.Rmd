@@ -17,10 +17,9 @@ dsn_sf  <- "Salesforce"
 
 **Output(s)**
 
-A .csv file containing:
-
-* 
-
+* A .csv file containing the names of entities that are on the LG Registry and not in Salesforce.
+* A .csv file containing the names of entities that are in Salesforce and not on the LG Registry.
+* A report of any notable information I become aware of as I work with the LG Registry.
 
 # Libraries and Data Sources
 
@@ -34,7 +33,7 @@ rm(dsn_sf)
 
 lg_registry <- 
   read_csv(
-    "C:/Users/mjensen1/Downloads/Entity Registry Tentative Data_9-13-19.csv")
+    "C:/Users/mjensen1/Documents/3 Project Support/Salesforce/Entity Registry Tentative Data_9-13-19.csv")
 ```
 
 # Function Definitions
@@ -45,58 +44,74 @@ lg_registry <-
 
 ```
 
-
 # Execution
 
-## LG Entities
-
-Clean-up:
+## LG and OSA Entity Lists
 
 ```{r}
-# lg_registry <-
-#   lg_entities %>%
-#   rename(entity_type = `Entity Type`,
-#          entity_name = `Entity Name`)
+lg_registry <-
+  lg_registry %>%
+  rename(lg_govt_type = `Entity Type`,
+         entity_name  = `Entity Name`) %>% 
+  filter(entity_name != "Test", entity_name != ",mnn") %>% 
+  mutate(entity_name = str_to_title(entity_name))
 
-lg_registry <- 
-  lg_registry %>% 
-  filter(`Entity Name` != "Test", `Entity Name` != ",mnn")
+lg_registry$exact_duplicate <- duplicated(lg_registry)
+lg_registry$duplicate_name  <- duplicated(lg_registry$entity_name)
 
-lg_registry$`Entity Name` <- 
-  str_to_title(lg_registry$`Entity Name`)
+lg_data <- 
+  list(
+    registry         = lg_registry,
+    exact_duplicate  = lg_registry %>% filter(exact_duplicate == "TRUE"),
+    duplicate_name   = lg_registry %>% filter(duplicate_name == "TRUE"),
+    entities         = lg_registry %>% 
+                         filter(exact_duplicate != "TRUE") %>% 
+                         select(entity_name, lg_govt_type),
+    govt_type        = lg_registry %>% 
+                         distinct(lg_govt_type) %>%
+                         arrange(lg_govt_type))
 
-lg_entity_type <- 
-  lg_registry %>% 
-  distinct(`Entity Type`) %>% 
-  arrange(`Entity Type`)
-
-lg_entities <- 
-  lg_registry %>% 
-  select(`Entity Name`, `Entity Type`)
-
-# invalid_entity_type <- 
-#   lg_entities %>% 
-#   filter(entity_type == "Not Sure" | is.na(entity_type))
+rm(lg_registry)
 ```
 
-## OSA Entities
-
-```{r, eval=FALSE}
-sf_entity_type <- 
+```{r}
+sf_govt_type <- 
   dbGetQuery(
     odbc_sf,
-    "SELECT DISTINCT DeveloperName AS entity_type
-    FROM RecordType") %>% 
-  arrange(entity_type)
-```
+    "SELECT DISTINCT DeveloperName AS sf_govt_type
+    FROM RecordType
+    WHERE DeveloperName NOT IN (
+      'AUP_Checklist',
+      'Budget_Checklist',
+      'Chat',
+      'Community',
+      'Community_User',
+      'Component', -- No entities of this type appear on LG Registry.
+      'Consolidation',
+      'CPA_Firm',
+      'Educational_Foundation', -- No entities of this type appear on LG       
+      -- Registry.
+      'Email',
+      'Financial_Institution', -- No entities of this type appear on LG       
+      -- Registry.
+      'Health_Provider', -- Not an entity type expected to register with LG.
+      'Large_Entity_Checklist',
+      'LEA_Checklist',
+      'LT_Gov_Document',
+      'Phone',
+      'Small_Entity_Checklist',
+      'Social',
+      'Special_Purpose_Audit',
+      'Subpoena',
+      'Transparency_Onboarding')") %>% 
+  arrange(sf_govt_type)
 
-```{r}
 sf_entities <- 
   dbGetQuery(
     odbc_sf,
     "SELECT 
       a.Name          AS entity_name,
-      r.DeveloperName AS entity_type
+      r.DeveloperName AS sf_govt_type
     FROM Account AS a
     LEFT JOIN RecordType AS r
     ON a.RecordTypeID = r.Id
@@ -110,47 +125,397 @@ sf_entities <-
         'Conservation_District',
         'County',
         'District_Health',
-        'Educational_Foundation',
-        'Financial_Institution',
         'Housing',
         'Independent_Quasi_State_Entity',
         'Institute_of_Higher_Education',
         'Interlocal',
+        'Justice_Court',
         'Local_and_Special_Service_District',
         'Mental_Health',
         'Non_Profits',
         'Redevelopment_Agency_Project_Area',
         'School_District_or_Charter_School',
         'State_Agency',
-        'Town',
-        'Justice_Court'))
-    AND a.Name <> 'test city 2'")
+        'Town'))
+    AND a.Name <> 'test city 2'") %>% 
+  as_tibble()
 
 sf_entities$entity_name <- str_to_title(sf_entities$entity_name)
-```
-
-## Analysis
-
-Check for duplicates:
-
-```{r}
-lg_duplicates_registry <- 
-    lg_registry[duplicated(lg_registry), ]
-
-lg_duplicates_names <- 
-  lg_entities[duplicated(lg_entities), ]
 
 sf_duplicates <- 
   sf_entities[duplicated(sf_entities), ]
 
-lg_entities <- 
-  lg_entities[!duplicated(lg_entities), ]
+if (nrow(sf_duplicates) == 0) {
+  
+  rm(sf_duplicates)
+}
+
+sf_data <- 
+  list(
+    entities     = sf_entities,
+    govt_type    = sf_govt_type)
+
+rm(sf_entities, sf_govt_type)
 ```
 
 ```{r}
+lg_data$entities <- 
+  lg_data$entities %>% 
+  mutate(govt_type = case_when(
+           str_detect(lg_govt_type, regex("^Area Agency")) ~ "Area Agency",
+           lg_govt_type %in% c("Charter School", "School District") ~ "LEA",
+           lg_govt_type == "Community Reinvestment Agency" ~ "CRA",
+           lg_govt_type == "Conservation District" ~ "Conservation District",
+           lg_govt_type == "County" ~ "County",
+           lg_govt_type == "Housing Authority" ~ "Housing",
+           lg_govt_type == "Municipality" ~ "Municipality",
+           str_detect(lg_govt_type, regex("Nonprofit")) ~ "Non Profit",
+           lg_govt_type == 
+             "Independent Entity or Independent State Agency" ~ 
+             "Independent Agency",
+           lg_govt_type %in% 
+             c("Interlocal Entity", "Substance Abuse Authority") ~ 
+             "AOG or Interlocal",
+           lg_govt_type == "Local Building Authority" ~ 
+             "Local Building Authority",
+           lg_govt_type %in% 
+             c("Local District", "Special Service District") ~ "Local or SSD",
+           lg_govt_type == "Local Health Department" ~ "Health Department",
+           lg_govt_type == "Local Mental Health Authority" ~ "Mental Health",
+           str_detect(entity_name, "Circle The Wagons Inc.") ~ "Non Profit",
+           str_detect(entity_name, "City Of Moab Redevelopment Agency") ~ "CRA",
+           str_detect(entity_name, "Marysvale Town") ~ "Municipality",
+           str_detect(entity_name, "Marysvale Town Local Building Authority") ~ 
+             "Local Building Authority",
+           str_detect(entity_name, "Perry City Redevelopment Agency") ~ "CRA",
+           str_detect(entity_name, "Pleasant View City Redevelopment Agency") ~
+             "CRA",
+           str_detect(
+             entity_name, 
+             "Price City Urban Renewal And Community Development Agency") ~
+             "CRA",
+           str_detect(entity_name, "Virgin Town") ~ "Municipality",
+           str_detect(entity_name, "Weber Human Services") ~ 
+             "AOG or Interlocal",
+           str_detect(entity_name, "Wellington City Redevelopment Agency") ~
+             "CRA"))
+
+sf_data$entities <- 
+  sf_data$entities %>% 
+  mutate(govt_type = case_when(
+           sf_govt_type %in% c("AOG", "Interlocal") ~ "AOG or Interlocal",
+           sf_govt_type %in% c("City", "Town") ~ "Municipality",
+           sf_govt_type %in% 
+            c("Community_Reinvestment_Agency", 
+              "Redevelopment_Agency_Project_Area") ~ "CRA",
+           sf_govt_type == "Conservation_District" ~ "Conservation District",
+           sf_govt_type == "County" ~ "County",
+           sf_govt_type == "Housing" ~ "Housing",
+           sf_govt_type %in% 
+            c("Independent_Quasi_State_Entity", "State_Agency") ~ 
+             "Independent Agency",
+           sf_govt_type == "District_Health" ~ "Health Department",
+           sf_govt_type == "Institute_of_Higher_Education" ~ "Higher Education",
+           sf_govt_type == "Justice_Court" ~ "Other",
+           sf_govt_type == "Local_and_Special_Service_District" ~ 
+             "Local or SSD",
+           sf_govt_type == "Mental_Health" ~ "Mental Health",
+           sf_govt_type == "Non_Profits" ~ "Non Profit",
+           sf_govt_type == "School_District_or_Charter_School" ~ "LEA"))
+```
+
+## LG vs OSA
+
+```{r}
+lg_vs_sf <- 
+  list(
+    sf_type_not_in_lg = 
+      sf_data$entities %>% 
+      distinct(govt_type) %>% 
+      anti_join(
+        lg_data$entities %>% distinct(govt_type),
+        by = "govt_type"),
+    
+    lg_type_not_in_sf = 
+      lg_data$entities %>% 
+      distinct(govt_type) %>% 
+      anti_join(
+        sf_data$entities %>% distinct(govt_type),
+        by = "govt_type"),
+    
+    type_totals =
+      full_join(
+        sf_data$entities %>% 
+          group_by(govt_type) %>% 
+          summarize(sf_total = n()),
+        lg_data$entities %>% 
+          group_by(govt_type) %>% 
+          summarize(lg_total = n()),
+        by = "govt_type") %>% 
+      mutate(sf_total = if_else(is.na(sf_total), 0L, sf_total),
+             lg_total = if_else(is.na(lg_total), 0L, lg_total),
+             difference = abs(sf_total - lg_total)) %>% 
+      arrange(desc(difference))
+)
+```
+
+## Learning `fuzzyjoin::stringdist_join()`
+
+### Sample data:
+
+```{r, eval=FALSE}
+table_a <- 
+  tibble(
+    entity_name = c("City of Cedar Hills", "Bluff"))
+
+table_b <- 
+  tibble(
+    entity_name = c("Cedar Hills", "Bluff City"))
+```
+
+### Levenshtein Distance (`method = 'lv'`)
+
+```{r, eval=FALSE}
+# max_dist = 2 (the default) won't match the tables:
+stringdist_join(
+  table_a,
+  table_b,
+  by = "entity_name",
+  method = "lv",
+  mode = "left",
+  distance_col = "lv_dist")
+
+# max_dist = 5 will match Bluff, but not Cedar Hills:
+stringdist_join(
+  table_a,
+  table_b,
+  by = "entity_name",
+  max_dist = 5,
+  method = "lv",
+  mode = "left",
+  distance_col = "lv_dist")
+
+# max_dist = 8 is required to get "City of Cedar Hills" to match "Cedar Hills:"
+stringdist_join(
+  table_a,
+  table_b,
+  by = "entity_name",
+  max_dist = 8,
+  method = "lv",
+  mode = "left",
+  distance_col = "lv_dist")
+
+# max_dist = 8 allows "Alpine City" to pair with "Green Party:"
+lg_sf_left_lv <- 
+  stringdist_join(
+    lg_entities,
+    sf_entities,
+    by = "entity_name",
+    max_dist = 8,
+    method = "lv",
+    mode = "left",
+    distance_col = "lv_dist")
+
+rm(lg_sf_left_lv)
+```
+
+Conclusion: Levenshtein distance is not helpful.
+
+### Optimal String Alignment Distance (`method = 'osa'`)
+
+```{r, eval=FALSE}
+# max_dist = 5 will match Bluff, but not Cedar Hills:
+stringdist_join(
+  table_a,
+  table_b,
+  by = "entity_name",
+  max_dist = 5,
+  method = "osa",
+  mode = "left",
+  distance_col = "lv_dist")
+
+# max_dist = 8 is required to get "City of Cedar Hills" to match "Cedar Hills:"
+stringdist_join(
+  table_a,
+  table_b,
+  by = "entity_name",
+  max_dist = 8,
+  method = "osa",
+  mode = "left",
+  distance_col = "lv_dist")
+
+# max_dist = 8 allows "Alpine City" to pair with "Green Party:"
+lg_sf_left_osa <- 
+  stringdist_join(
+    lg_entities,
+    sf_entities,
+    by = "entity_name",
+    max_dist = 8,
+    method = "osa",
+    mode = "left",
+    distance_col = "lv_dist")
+
+rm(lg_sf_left_osa)
+```
+
+Conclusion: Same conclusion as using Levenshtein (which makes sense, as the two methods are similar). Not helpful here.
+
+### Longest Common Substring (`method = 'lcs'`)
+
+```{r, eval=FALSE}
+# max_dist = 5 will match Bluff, but not Cedar Hills:
+stringdist_join(
+  table_a,
+  table_b,
+  by = "entity_name",
+  max_dist = 5,
+  method = "lcs",
+  mode = "left",
+  distance_col = "lcs_distance")
+
+# max_dist = 8 is required to get "City of Cedar Hills" to match "Cedar Hills:"
+stringdist_join(
+  table_a,
+  table_b,
+  by = "entity_name",
+  max_dist = 8,
+  method = "lcs",
+  distance_col = "lcs_distance")
+
+# max_dist = 8 won't pair "Alpine City" with "Green Party," so that's an 
+# improvement from the methods above.
+lg_sf_left_lcs <- 
+  stringdist_join(
+    lg_entities,
+    sf_entities,
+    by = "entity_name",
+    max_dist = 8,
+    method = "lcs",
+    mode = "left",
+  distance_col = "lcs_distance")
+
+rm(lg_sf_left_lcs)
+```
+
+Conclusion: For our purposes, better than the Levenshtein and OSA methods.
+
+### Jaccard Distance (`method = 'jaccard'`)
+
+The Jaccard Distance method returns the Cartesian product of the inputs.
+
+A Jaccard Distance of 0 indicates no match, and a Jaccard Distance of 1 indicates a perfect match.
+
+```{r, eval=FALSE}
+# This method gives a higher match for the pairings that make the least sense:
+stringdist_join(
+  table_a,
+  table_b,
+  by = "entity_name",
+  method = "jaccard",
+  mode = "left",
+  distance_col = "jaccard_distance")
+```
+
+Conclusion: Not a good method to use here.
+
+### Jaro Distance (`method = 'jw', p = 0`)
+
+The Jaro Distance method returns the Cartesian product of the inputs.
+
+A Jaro Distance of 0 indicates a complete match, while a distance of 1 indicates complete dissimilarity.
+
+Modifying the value of `p` changes the Jaro Distance to the Jaro-Winkler Distance. Given how the Jaro-Winkler Distance calculates the `l` value, I don't see a reason to explore that method.
+
+```{r, eval=FALSE}
+stringdist_join(
+  table_a,
+  table_b,
+  by = "entity_name",
+  method = "jw",
+  p = 0,
+  mode = "left",
+  distance_col = "jw_distance")
+
+lg_sf_left_jw <- 
+  stringdist_join(
+    lg_entities,
+    sf_entities,
+    by = "entity_name",
+    method = "jw",
+    p = 0,
+    mode = "left",
+  distance_col = "jw_distance")
+
+rm(lg_sf_left_jw)
+```
+
+Conclusion: This seems to be the best method so far, though I'll need to filter the data in order to get back to only one observation per entity.
+
+## Analysis
+
+```{r}
+lg_sf_left <- 
+  stringdist_join(
+    lg_data$entities,
+    sf_entities,
+    by = "entity_name",
+    method = "jw",
+    p = 0,
+    mode = "left",
+  distance_col = "jw_distance")
+
+lg_sf_anti <- 
+  stringdist_join(
+    lg_data$entities,
+    sf_entities,
+    by = "entity_name",
+    method = "jw",
+    p = 0,
+    mode = "anti",
+  distance_col = "jw_distance")
+
+```
+
+Fuzzy join:
+
+```{r}
 lg_entities <- 
-  lg_entities %>% 
-  rename(entity_name = `Entity Name`, entity_type = `Entity Type`)
+  lg_entities %>% select(entity_name)
+
+sf_entities <- 
+  sf_entities %>% select(entity_name)
+
+join_lg_sf_left <- 
+  stringdist_left_join(
+    lg_entities,
+    sf_entities,
+    by = "entity_name",
+    method = "jaccard",
+    distance_col = "jaccard_distance") %>% 
+  arrange(entity_name.x, desc(jaccard_distance))
+
+join_lg_sf_left2 <- 
+  stringdist_left_join(
+    lg_entities,
+    sf_entities,
+    by = "entity_name",
+    method = "jw", p = 0,
+    distance_col = "jaro_distance") %>% 
+  arrange(entity_name.x, desc(jaro_distance))
+
+join_lg_sf_left3 <- 
+  stringdist_left_join(
+    lg_entities,
+    sf_entities,
+    by = "entity_name",
+    method = "lv",
+    distance_col = "lv_distance") %>% 
+  arrange(entity_name.x, desc(lv_distance))
+
+join_lg_sf_anti <- 
+  stringdist_anti_join(
+    lg_entities,
+    sf_entities)
 
 match_anti_lg <- 
   stringdist_anti_join(
@@ -177,7 +542,21 @@ match_left_lg <-
     osa_type = entity_type.y)
 ```
 
+## Report: Notable Information
 
+"Entity Registry Tentative Data_9-13-19.csv" contains:
+
+* On initial import, 1707 observations of 38 variables.
+  * Two test entities, both with an `Entity Name` value of "Test."
+  * One entity named ",mnn."
+  * Eight observations that are exact duplicates of at least one other observation (across all variables).
+  * 97 `Entity Name` values that are a duplicate of another `Entity Name` value (some of these appear to be valid).
+  * `Entity Type` values that are `NA`, `Not Sure`, duplicated (e.g., two types of "Area Agency"), incorrect for the entity (e.g., Clearfield Housing Authority is listed as a Municipality), and that do not match the government types we use at OSA (why do two State agencies have different lists of the possible government types?).
+
+* After removing the two test entities, the entity named ",mnn.," and the eight observations that are exact duplicates of another observation, the LG Registry contains 1696 entities.
+
+
+compared to the 1681 entities OSA 
 
 # DBMS Disconnection
 
