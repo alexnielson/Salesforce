@@ -13,7 +13,7 @@ Browse Salesforce data.
 **Input(s)**
 
 ```{r}
-dsn_salesforce <- "Salesforce"
+dsn_sf  <- "Salesforce"
 ```
 
 **Output(s)**
@@ -27,11 +27,18 @@ library(magrittr)
 library(odbc)
 library(tidyverse)
 
-odbc_sf <- dbConnect(odbc::odbc(), dsn_salesforce)
-rm(dsn_salesforce)
+odbc_sf  <- dbConnect(odbc::odbc(), dsn_sf)
+rm(dsn_sf)
 ```
 
 # Function Definitions
+
+## Argument Definitions
+
+```{r}
+
+```
+
 
 # Execution
 
@@ -94,7 +101,57 @@ record_type <-
     FROM RecordType")
 ```
 
-## Transparency_Reporting_c
+## RecordType Table
+
+```{r}
+record_type <- 
+  dbGetQuery(
+    odbc_sf,
+    "SELECT DISTINCT Name
+    FROM RecordType") %>% 
+  arrange()
+```
+
+## Report_Review__c Table
+
+```{r}
+report_review__c_2018 <- 
+  dbGetQuery(
+    odbc_sf,
+    "SELECT 
+      a.Name                            AS entity_name,
+      y.Name                            AS report_year,
+      t.Name                            AS record_type,
+      r.Total_Revenue_or_Expenditure__c AS total_rev_or_exp,
+      r.Total_Expenditure__c            AS total_exp,
+      r.Total_Revenue__c                AS total_rev
+    FROM Report_Review__c               AS r
+    LEFT JOIN Account                   AS a
+    ON r.Entity_Name__c = a.Id
+    LEFT JOIN RecordType                AS t
+    ON r.RecordTypeID = t.Id
+    LEFT JOIN Report_Year__c            AS y
+    ON r.review_report_year__c = y.Id
+    WHERE t.Name IN (
+      'AUP Checklist',
+      'Large Entity Checklist',
+      'LEA Checklist',
+      'Small Entity Checklist')
+    AND r.review_report_year__c IN (
+      SELECT Id
+      FROM Report_Year__c
+      WHERE Name = '2018')") %>% 
+  mutate(total = 
+           if_else(
+             !is.na(total_rev_or_exp), 
+             total_rev_or_exp,
+             if_else(
+               total_exp > total_rev,
+               total_exp,
+               total_rev)))
+```
+
+## Transparency_Reporting_c Table
 
 ```{r}
 transparency_reporting__c <- 
@@ -121,7 +178,7 @@ transparency_reporting__c <-
          entity_id, created_by, last_modified_by, id)
 ```
 
-## Transparency_Reporting__c_hd
+## Transparency_Reporting__c_hd Table
 
 ```{r}
 transparency_reporting__c_hd <- 
@@ -152,10 +209,6 @@ user_names <-
 ```
 
 # Workspace
-
-```{r}
-
-```
 
 # DBMS Disconnection
 
