@@ -7,12 +7,21 @@ output: html_notebook
 
 **Purpose**
 
-Compare the LG's list of entities, obtained by the annual entity registration process, with OSA's list of entities to identify the differences.
+Compare the LG Registry with OSA's list of entities to identify entities that appear on one list and not the other.
 
 **Input(s)**
 
+* The DSN to Salesforce.
+* The LG Registry file titled "Entity Registry Tentative Data_9-13-19.csv."
+
 ```{r}
 dsn_sf  <- "Salesforce"
+
+LG <- 
+  list(
+    registry_raw = 
+      readr::read_csv(
+    "C:/Users/mjensen1/Documents/3 Project Support/Salesforce/Entity Registry Tentative Data_9-13-19.csv"))
 ```
 
 **Output(s)**
@@ -30,10 +39,6 @@ library(tidyverse)
 
 odbc_sf <- dbConnect(odbc::odbc(), dsn_sf)
 rm(dsn_sf)
-
-lg_registry <- 
-  read_csv(
-    "C:/Users/mjensen1/Documents/3 Project Support/Salesforce/Entity Registry Tentative Data_9-13-19.csv")
 ```
 
 # Function Definitions
@@ -46,35 +51,11 @@ lg_registry <-
 
 # Execution
 
-## LG and OSA Entity Lists
+## Import OSA Entities
 
-```{r}
-lg_registry <-
-  lg_registry %>%
-  rename(lg_govt_type = `Entity Type`,
-         entity_name  = `Entity Name`) %>% 
-  filter(entity_name != "Test", entity_name != ",mnn") %>% 
-  mutate(entity_name = str_to_title(entity_name))
+Determine which `DeveloperName` values to import:
 
-lg_registry$exact_duplicate <- duplicated(lg_registry)
-lg_registry$duplicate_name  <- duplicated(lg_registry$entity_name)
-
-lg_data <- 
-  list(
-    registry         = lg_registry,
-    exact_duplicate  = lg_registry %>% filter(exact_duplicate == "TRUE"),
-    duplicate_name   = lg_registry %>% filter(duplicate_name == "TRUE"),
-    entities         = lg_registry %>% 
-                         filter(exact_duplicate != "TRUE") %>% 
-                         select(entity_name, lg_govt_type),
-    govt_type        = lg_registry %>% 
-                         distinct(lg_govt_type) %>%
-                         arrange(lg_govt_type))
-
-rm(lg_registry)
-```
-
-```{r}
+```{r, eval=FALSE}
 sf_govt_type <- 
   dbGetQuery(
     odbc_sf,
@@ -105,58 +86,112 @@ sf_govt_type <-
       'Subpoena',
       'Transparency_Onboarding')") %>% 
   arrange(sf_govt_type)
-
-sf_entities <- 
-  dbGetQuery(
-    odbc_sf,
-    "SELECT 
-      a.Name          AS entity_name,
-      r.DeveloperName AS sf_govt_type
-    FROM Account AS a
-    LEFT JOIN RecordType AS r
-    ON a.RecordTypeID = r.Id
-    Where RecordTypeID IN (
-      SELECT Id
-      FROM RecordType
-      WHERE DeveloperName IN (
-        'AOG',
-        'City',
-        'Community_Reinvestment_Agency',
-        'Conservation_District',
-        'County',
-        'District_Health',
-        'Housing',
-        'Independent_Quasi_State_Entity',
-        'Institute_of_Higher_Education',
-        'Interlocal',
-        'Justice_Court',
-        'Local_and_Special_Service_District',
-        'Mental_Health',
-        'Non_Profits',
-        'Redevelopment_Agency_Project_Area',
-        'School_District_or_Charter_School',
-        'State_Agency',
-        'Town'))
-    AND a.Name <> 'test city 2'") %>% 
-  as_tibble()
-
-sf_entities$entity_name <- str_to_title(sf_entities$entity_name)
-
-sf_duplicates <- 
-  sf_entities[duplicated(sf_entities), ]
-
-if (nrow(sf_duplicates) == 0) {
-  
-  rm(sf_duplicates)
-}
-
-sf_data <- 
-  list(
-    entities     = sf_entities,
-    govt_type    = sf_govt_type)
-
-rm(sf_entities, sf_govt_type)
 ```
+
+Import OSA entities:
+
+```{r}
+OSA <- 
+  list(
+    entities_raw = 
+      dbGetQuery(
+        odbc_sf,
+        "SELECT 
+          a.Name          AS entity_name,
+          r.DeveloperName AS sf_govt_type
+        FROM Account AS a
+        LEFT JOIN RecordType AS r
+        ON a.RecordTypeID = r.Id
+        Where RecordTypeID IN (
+          SELECT Id
+          FROM RecordType
+          WHERE DeveloperName IN (
+            'AOG',
+            'City',
+            'Community_Reinvestment_Agency',
+            'Conservation_District',
+            'County',
+            'District_Health',
+            'Housing',
+            'Independent_Quasi_State_Entity',
+            'Institute_of_Higher_Education',
+            'Interlocal',
+            'Justice_Court',
+            'Local_and_Special_Service_District',
+            'Mental_Health',
+            'Non_Profits',
+            'Redevelopment_Agency_Project_Area',
+            'School_District_or_Charter_School',
+            'State_Agency',
+            'Town'))
+        AND a.Name <> 'test city 2'") %>% 
+      as_tibble())
+```
+
+## Clean LG and OSA data
+
+```{r}
+LG$invalid_names <- 
+  LG$registry_raw %>% 
+  filter(`Entity Name` %in% c("Test", ",mnn"))
+
+LG$registry <-
+  LG$registry_raw %>%
+  rename(lg_govt_type = `Entity Type`,
+         entity_name  = `Entity Name`) %>% 
+  filter(!entity_name %in% c("Test", ",mnn")) %>% 
+  map_if(is.character, str_to_title) %>% 
+  bind_rows() %>% 
+  mutate(
+    duplicate_record = duplicated(.),
+    duplicate_name   = duplicated(.$entity_name))
+
+LG$duplicate_record <- 
+  LG$registry %>% 
+  filter(duplicate_record == TRUE)
+
+LG$duplicate_name <- 
+  LG$registry %>% 
+  filter(duplicate_name == TRUE)
+
+LG$registry_clean <- 
+  LG$registry %>% 
+  filter(
+    duplicate_record == FALSE)
+```
+
+```{r}
+OSA$entities <- 
+  OSA$entities_raw %>% 
+  mutate(entity_name = str_to_title(entity_name))
+
+OSA$duplicates <- 
+  OSA$entities[duplicated(OSA$entities), ]
+
+if (nrow(OSA$duplicates) == 0) OSA$duplicates <- NULL
+
+OSA$entities_clean <- OSA$entities
+```
+
+## Organize LG Registry
+
+```{r}
+lg_data <- 
+  list(
+    registry         = lg_registry,
+    exact_duplicate  = lg_registry %>% filter(exact_duplicate == "TRUE"),
+    duplicate_name   = lg_registry %>% filter(duplicate_name == "TRUE"),
+    entities         = lg_registry %>% 
+                         filter(exact_duplicate != "TRUE") %>% 
+                         select(entity_name, lg_govt_type),
+    govt_type        = lg_registry %>% 
+                         distinct(lg_govt_type) %>%
+                         arrange(lg_govt_type))
+
+rm(lg_registry)
+```
+
+## Create Standard Government Types
 
 ```{r}
 lg_data$entities <- 
@@ -224,42 +259,7 @@ sf_data$entities <-
            sf_govt_type == "School_District_or_Charter_School" ~ "LEA"))
 ```
 
-## LG vs OSA
-
-```{r}
-lg_vs_sf <- 
-  list(
-    sf_type_not_in_lg = 
-      sf_data$entities %>% 
-      distinct(govt_type) %>% 
-      anti_join(
-        lg_data$entities %>% distinct(govt_type),
-        by = "govt_type"),
-    
-    lg_type_not_in_sf = 
-      lg_data$entities %>% 
-      distinct(govt_type) %>% 
-      anti_join(
-        sf_data$entities %>% distinct(govt_type),
-        by = "govt_type"),
-    
-    type_totals =
-      full_join(
-        sf_data$entities %>% 
-          group_by(govt_type) %>% 
-          summarize(sf_total = n()),
-        lg_data$entities %>% 
-          group_by(govt_type) %>% 
-          summarize(lg_total = n()),
-        by = "govt_type") %>% 
-      mutate(sf_total = if_else(is.na(sf_total), 0L, sf_total),
-             lg_total = if_else(is.na(lg_total), 0L, lg_total),
-             difference = abs(sf_total - lg_total)) %>% 
-      arrange(desc(difference))
-)
-```
-
-## Learning `fuzzyjoin::stringdist_join()`
+## Learn `fuzzyjoin::stringdist_join()`
 
 ### Sample data:
 
@@ -453,6 +453,114 @@ Conclusion: This seems to be the best method so far, though I'll need to filter 
 
 ## Analysis
 
+### Summarize Differences, by Gov't Type
+
+```{r}
+lg_vs_sf <- 
+  list(
+    sf_type_not_in_lg = 
+      sf_data$entities %>% 
+      distinct(govt_type) %>% 
+      anti_join(
+        lg_data$entities %>% distinct(govt_type),
+        by = "govt_type"),
+    
+    lg_type_not_in_sf = 
+      lg_data$entities %>% 
+      distinct(govt_type) %>% 
+      anti_join(
+        sf_data$entities %>% distinct(govt_type),
+        by = "govt_type"),
+    
+    type_totals =
+      full_join(
+        sf_data$entities %>% 
+          group_by(govt_type) %>% 
+          summarize(sf_total = n()),
+        lg_data$entities %>% 
+          group_by(govt_type) %>% 
+          summarize(lg_total = n()),
+        by = "govt_type") %>% 
+      mutate(sf_total = if_else(is.na(sf_total), 0L, sf_total),
+             lg_total = if_else(is.na(lg_total), 0L, lg_total),
+             difference = abs(sf_total - lg_total)) %>% 
+      arrange(desc(difference))
+)
+```
+
+### Report: Differences
+
+```{r}
+any(
+  lg_data$entities %>% 
+    filter(govt_type == "Local Building Authority") %>% 
+    select(entity_name)
+  %in% 
+  sf_data$entities$entity_name)
+
+any(
+  lg_data$entities %>% 
+    filter(govt_type == "Area Agency") %>% 
+    select(entity_name)
+  %in% 
+  sf_data$entities$entity_name)
+
+any(
+  sf_data$entities %>% 
+    filter(govt_type == "Higher Education") %>% 
+    select(entity_name)
+  %in% 
+  lg_data$entities$entity_name)
+```
+
+```{r}
+lg_vs_sf$lg_is_missing <- 
+  sf_data$entities %>% 
+  filter(govt_type == "Higher Education")
+
+lg_vs_sf$sf_is_missing <- 
+  lg_data$entities %>% 
+  filter(govt_type %in% c("Local Building Authority", "Area Agency"))
+```
+
+### Jaro Distance
+
+```{r}
+
+
+
+
+lg_sf_left_jaro <- 
+  stringdist_join(
+    lg_data$entities,
+    sf_data$entities,
+    by = "entity_name"
+  )
+
+
+stringdist_join(
+  table_a,
+  table_b,
+  by = "entity_name",
+  method = "jw",
+  p = 0,
+  mode = "left",
+  distance_col = "jw_distance")
+
+lg_sf_left_jw <- 
+  stringdist_join(
+    lg_entities,
+    sf_entities,
+    by = "entity_name",
+    method = "jw",
+    p = 0,
+    mode = "left",
+  distance_col = "jw_distance")
+
+rm(lg_sf_left_jw)
+```
+
+
 ```{r}
 lg_sf_left <- 
   stringdist_join(
@@ -542,6 +650,11 @@ match_left_lg <-
     osa_type = entity_type.y)
 ```
 
+## Report: On LG Registry and not in Salesforce
+
+## Report: In Salesforce and not on LG Registry
+
+
 ## Report: Notable Information
 
 "Entity Registry Tentative Data_9-13-19.csv" contains:
@@ -549,14 +662,11 @@ match_left_lg <-
 * On initial import, 1707 observations of 38 variables.
   * Two test entities, both with an `Entity Name` value of "Test."
   * One entity named ",mnn."
-  * Eight observations that are exact duplicates of at least one other observation (across all variables).
+  * Ten observations that are exact duplicates of at least one other observation (across all variables).
   * 97 `Entity Name` values that are a duplicate of another `Entity Name` value (some of these appear to be valid).
   * `Entity Type` values that are `NA`, `Not Sure`, duplicated (e.g., two types of "Area Agency"), incorrect for the entity (e.g., Clearfield Housing Authority is listed as a Municipality), and that do not match the government types we use at OSA (why do two State agencies have different lists of the possible government types?).
 
-* After removing the two test entities, the entity named ",mnn.," and the eight observations that are exact duplicates of another observation, the LG Registry contains 1696 entities.
-
-
-compared to the 1681 entities OSA 
+* After removing the two test entities, the entity named ",mnn.," and the eight observations that are exact duplicates of another observation, the LG Registry contains 1696 entities. OSA has 1667 entities, which is a total difference of 29.
 
 # DBMS Disconnection
 
