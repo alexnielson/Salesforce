@@ -7,7 +7,9 @@ output: html_notebook
 
 **Purpose**
 
-Compare the LG Registry with OSA's list of entities to identify entities that appear on one list and not the other.
+Compare the Lt. Governor's Local Government Registry with OSA's list of entities to identify entities that appear on one list and not the other.
+
+See https://entityregistry.utah.gov/ for more information on the LG's Office entity registration requirements.
 
 **Input(s)**
 
@@ -53,42 +55,7 @@ rm(dsn_sf)
 
 ## Import OSA Entities
 
-Determine which `DeveloperName` values to import:
-
-```{r, eval=FALSE}
-sf_govt_type <- 
-  dbGetQuery(
-    odbc_sf,
-    "SELECT DISTINCT DeveloperName AS sf_govt_type
-    FROM RecordType
-    WHERE DeveloperName NOT IN (
-      'AUP_Checklist',
-      'Budget_Checklist',
-      'Chat',
-      'Community',
-      'Community_User',
-      'Component', -- No entities of this type appear on LG Registry.
-      'Consolidation',
-      'CPA_Firm',
-      'Educational_Foundation', -- No entities of this type appear on LG       
-      -- Registry.
-      'Email',
-      'Financial_Institution', -- No entities of this type appear on LG       
-      -- Registry.
-      'Health_Provider', -- Not an entity type expected to register with LG.
-      'Large_Entity_Checklist',
-      'LEA_Checklist',
-      'LT_Gov_Document',
-      'Phone',
-      'Small_Entity_Checklist',
-      'Social',
-      'Special_Purpose_Audit',
-      'Subpoena',
-      'Transparency_Onboarding')") %>% 
-  arrange(sf_govt_type)
-```
-
-Import OSA entities:
+Import limited purpose and local government entities from Salesforce (the entity types required to register with the LG's Office):
 
 ```{r}
 OSA <- 
@@ -97,33 +64,24 @@ OSA <-
       dbGetQuery(
         odbc_sf,
         "SELECT 
-          a.Name          AS entity_name,
-          r.DeveloperName AS sf_govt_type
-        FROM Account AS a
+          a.Id   AS entity_id,
+          a.Name AS entity_name,
+          r.Name AS govt_type
+        FROM Account         AS a
         LEFT JOIN RecordType AS r
-        ON a.RecordTypeID = r.Id
-        Where RecordTypeID IN (
+        ON a.RecordTypeId = r.Id
+        WHERE a.RecordTypeId IN (
           SELECT Id
           FROM RecordType
-          WHERE DeveloperName IN (
-            'AOG',
-            'City',
-            'Community_Reinvestment_Agency',
-            'Conservation_District',
-            'County',
-            'District_Health',
-            'Housing',
-            'Independent_Quasi_State_Entity',
-            'Institute_of_Higher_Education',
-            'Interlocal',
-            'Justice_Court',
-            'Local_and_Special_Service_District',
-            'Mental_Health',
-            'Non_Profits',
-            'Redevelopment_Agency_Project_Area',
-            'School_District_or_Charter_School',
-            'State_Agency',
-            'Town'))
+          WHERE SobjectType = 'Account'
+          AND IsActive = 'TRUE'
+          AND Name NOT IN (
+            'Community User',
+            'Court (Search Under Parent Entity)',
+            'CPA Firm',
+            'Health Provider',
+            'Institution of Higher Education',
+            'State of Utah (agencies/depts/comp units/ etc.)'))
         AND a.Name <> 'test city 2'") %>% 
       as_tibble())
 ```
