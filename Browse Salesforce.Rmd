@@ -1,25 +1,8 @@
 ---
-title: "Browse Salesforce Data"
+title: "Salesforce - Boilerplate Code & Data Dictionary"
 author: "Michael Jensen"
-date: "June 2019"
 output: html_notebook
 ---
-# Program Description
-
-**Purpose**
-
-Browse Salesforce data.
-
-**Input(s)**
-
-```{r}
-dsn_sf  <- "Salesforce"
-```
-
-**Output(s)**
-
-
-
 # Libraries and Data Sources
 
 ```{r}
@@ -27,89 +10,158 @@ library(magrittr)
 library(odbc)
 library(tidyverse)
 
-odbc_sf  <- dbConnect(odbc::odbc(), dsn_sf)
-rm(dsn_sf)
+odbc_sf  <- dbConnect(odbc::odbc(), "Salesforce")
 ```
 
-# Function Definitions
-
-## Argument Definitions
-
-```{r}
-
-```
-
-
-# Execution
+# Database Tables
 
 ## Account Table
 
-```{r}
-entity_names <- 
-  dbGetQuery(
-    odbc_sf,
-    "SELECT
-      id   AS entity_id,
-      Name AS entity_name
-    FROM Account")
-```
+### Fields:
+
+* Id (string):
+* IsDeleted (boolean):
+* MasterRecordId (string):
+* Name (string): The name of the entity.
+  * Filter out `test city 2`.
+* Type (string):
+* RecordTypeId (string): The Record Type ID (foreign key for RecordType.Id).
+* ParentId (string):
+* BillingStreet (string):
+* BillingCity (string):
+* BillingState (string):
+* BillingPostalCode (string):
+* BillingCountry (string):
+* BillingLatitude (double):
+* BillingLongitude (double):
+* BillingGeocodeAccuracy (string):
+* BillingAddress (string):
+*
+*
+*
+* 
+* 
+*
+*
+*
+*
+* Phone (string):
+* Fax (string):
+
+### Code
 
 ```{r}
-lg_names <- 
+Account_governments <- 
   dbGetQuery(
     odbc_sf,
     "SELECT 
-      a.Name          AS entity_name,
-      r.DeveloperName AS govt_type
-    FROM Account AS a
+      a.Id   AS entity_id,
+      a.Name AS entity_name,
+      r.Name AS govt_type
+    FROM Account         AS a
     LEFT JOIN RecordType AS r
-    ON a.RecordTypeID = r.Id
-    Where RecordTypeID IN (
+    ON a.RecordTypeId = r.Id
+    WHERE a.RecordTypeId IN (
       SELECT Id
       FROM RecordType
-      WHERE DeveloperName IN (
-        'AOG',
-        'City',
-        'Community_Reinvestment_Agency',
-        'Conservation_District',
-        'County',
-        'District_Health',
-        'Educational_Foundation',
-        'Financial_Institution',
-        'Housing',
-        'Independent_Quasi_State_Entity',
-        'Institute_of_Higher_Education',
-        'Interlocal',
-        'Local_and_Special_Service_District',
-        'Mental_Health',
-        'Non_Profits',
-        'Redevelopment_Agency_Project_Area',
-        'School_District_or_Charter_School',
-        'State_Agency',
-        'Town',
-        'Justice_Court'))
-    AND a.Name <> 'test city 2'")
+      WHERE SobjectType = 'Account'
+      AND IsActive = 'TRUE'
+      AND Name NOT IN (
+        'Community User',
+        'Court (Search Under Parent Entity)',
+        'CPA Firm',
+        'Health Provider',
+        'Non Profits'))
+    AND a.Name <> 'test city 2'") %>% 
+  as_tibble()
+
+Account_local_governments <- 
+  dbGetQuery(
+    odbc_sf,
+    "SELECT 
+      a.Id   AS entity_id,
+      a.Name AS entity_name,
+      r.Name AS govt_type
+    FROM Account         AS a
+    LEFT JOIN RecordType AS r
+    ON a.RecordTypeId = r.Id
+    WHERE a.RecordTypeId IN (
+      SELECT Id
+      FROM RecordType
+      WHERE SobjectType = 'Account'
+      AND IsActive = 'TRUE'
+      AND Name NOT IN (
+        'Community User',
+        'Court (Search Under Parent Entity)',
+        'CPA Firm',
+        'Health Provider',
+        'Independent/Quasi State Entity',
+        'Institution of Higher Education',
+        'Non Profits',
+        'State of Utah (agencies/depts/comp units/ etc.)'))
+    AND a.Name <> 'test city 2'") %>% 
+  as_tibble()
 ```
 
 ## RecordType Table
 
+### Fields:
+
+* Id (string): Record Type ID (primary key).
+* Name (string): The name of the record type.
+* DeveloperName (string): The name of the record type, with underscores instead of spaces between words.
+* Namespace Prefix (string): NA field.
+* Description (string): Description of the record type.
+  * Mostly `NA` values.
+* BusinessProcessId (string):
+* SobjectType (string): 
+  * State and local government records have an `SobjectType` value of `Account`, though not all `Account` records are state or local governments.
+* IsActive (boolean): Whether the record type is active.
+* CreatedById (string):
+* CreatedDate (datetime:
+* LastModifiedById (string):
+* LastModifiedDate (datetime):
+* SystemModstamp (datetime):
+
+### Code
+
 ```{r}
-record_type <- 
+RecordType_governments <- 
   dbGetQuery(
     odbc_sf,
-    "SELECT DISTINCT DeveloperName
-    FROM RecordType")
-```
+    "SELECT 
+      Id          AS record_type_id, 
+      Name        AS record_type_name, 
+      Description AS description
+    FROM RecordType
+    WHERE SobjectType = 'Account'
+    AND IsActive = 'TRUE'
+    AND Name NOT IN (
+      'Community User',
+      'Court (Search Under Parent Entity)',
+      'CPA Firm',
+      'Health Provider',
+      'Non Profits')")
 
-## RecordType Table
-
-```{r}
-record_type <- 
+RecordType_local_governments <- 
   dbGetQuery(
     odbc_sf,
-    "SELECT DISTINCT Name
-    FROM RecordType") %>% 
-  arrange()
+    "SELECT 
+      Id          AS record_type_id, 
+      Name        AS record_type_name, 
+      Description AS description
+    FROM RecordType
+    WHERE SobjectType = 'Account'
+    AND IsActive = 'TRUE'
+    AND Name NOT IN (
+      'Community User',
+      'Court (Search Under Parent Entity)',
+      'CPA Firm',
+      'Health Provider',
+      'Independent/Quasi State Entity',
+      'Institution of Higher Education',
+      'Non Profits',
+      'State of Utah (agencies/depts/comp units/ etc.)')")  
 ```
 
 ## Report_Review__c Table
@@ -208,10 +260,10 @@ user_names <-
     FROM User")
 ```
 
-# Workspace
-
 # DBMS Disconnection
 
 ```{r}
 dbDisconnect(odbc_sf)
 ```
+
+# Workspace
