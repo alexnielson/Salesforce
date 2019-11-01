@@ -45,6 +45,7 @@ reports <-
 ```{r}
 library(fuzzyjoin)
 library(odbc)
+library(qdap) # Try using check_spelling to identify errors ...
 library(tidyverse)
 
 odbc_sf <- dbConnect(odbc::odbc(), dsn_sf)
@@ -89,20 +90,26 @@ OSA <-
             'Health Provider',
             'Institution of Higher Education',
             'State of Utah (agencies/depts/comp units/ etc.)'))
-        AND a.Name <> 'test city 2'") %>% 
+        AND a.Name <> 'test city 2'
+        AND Entity_Status__c NOT IN ('Inactive', 'Dissolved')") %>% 
       as_tibble())
 ```
 
-## Tidy LG and OSA data
+## Tidy
 
 ```{r}
 LG$registry_tidying <- 
   LG$registry_raw %>% 
   rename(
     lg_govt_type = `Entity Type`,
-    entity_name  = `Entity Name`)
+    entity_name  = `Entity Name`,
+    lg_county       = `County`) %>% 
+  mutate(
+    entity_name = str_replace(entity_name, " - ", " – "),
+    entity_name = str_replace(entity_name, " — ", " – " ),
+    entity_name = str_replace(entity_name, "Dsitrict", "District"))
 
-reports$notable_info[["lg_invalid_names"]] <- 
+reports$notable_info$lg_invalid_names <- 
   LG$registry_tidying %>% 
   filter(entity_name %in% c("Test", ",mnn"))
 
@@ -111,55 +118,104 @@ LG$registry_tidying <-
   filter(!entity_name %in% c("Test", ",mnn")) %>%
   map_if(is.character, str_to_title) %>% 
   bind_rows() %>% 
-  mutate(
-    duplicate_record = duplicated(.),
-    duplicate_name   = duplicated(.$entity_name))
+  mutate(duplicate_record = duplicated(.))
 
-reports$notable_info[["duplicate_record"]] <- 
+reports$notable_info$duplicate_record <- 
   LG$registry_tidying %>% 
-  filter(duplicate_record)
-
-reports$notable_info[["duplicate_entity_name"]] <- 
-  LG$registry_tidying %>% 
-  filter(duplicate_name)
+  filter(duplicate_record) %>% 
+  arrange(entity_name)
 
 LG$registry_tidying <- 
   LG$registry_tidying %>% 
-  filter(!duplicate_record)
+  filter(!duplicate_record) %>% 
+  select(entity_name, lg_govt_type, lg_county) %>% 
+  mutate(duplicate_name_type_county = duplicated(.))
+
+reports$notable_info$duplicate_name_type_county <- 
+  LG$registry_tidying %>% 
+  filter(duplicate_name_type_county) %>% 
+  select(-duplicate_name_type_county) %>% 
+  arrange(entity_name)
+
+LG$registry_tidying <- 
+  LG$registry_tidying %>% 
+  filter(!duplicate_name_type_county) %>% 
+  select(-duplicate_name_type_county)
+
+LG$registry_tidy <- 
+  LG$registry_tidying
 ```
 
 ```{r}
-OSA$entities <- 
+OSA$entities_tidying <- 
   OSA$entities_raw %>% 
-  mutate(entity_name = str_to_title(entity_name))
+  mutate(
+    entity_name = str_to_title(entity_name),
+    duplicate_record = duplicated(.),
+    duplicate_name   = duplicated(.$entity_name))
 
-OSA$duplicates <- 
-  OSA$entities[duplicated(OSA$entities), ]
+if (OSA$entities_tidying %>% filter(duplicate_record) %>% nrow() > 0) {
+  
+  stop("Duplicate records found in OSA data. Correct in Salesforce and reimport")
+}
 
-if (nrow(OSA$duplicates) == 0) OSA$duplicates <- NULL
+if (OSA$entities_tidying %>% filter(duplicate_name) %>% nrow() > 0) {
+  
+  stop("Duplicate entity names found in OSA data. Correct in Salesforce and reimport")
+}
 
-OSA$entities_clean <- OSA$entities
+OSA$entities_tidying <- 
+  OSA$entities_tidying %>% 
+  select(entity_name, osa_govt_type)
+
+OSA$entities_tidy <- 
+  OSA$entities_tidying
 ```
 
-## Organize LG Registry
+## Transform
+
+### Create Standard Government Types
 
 ```{r}
-lg_data <- 
-  list(
-    registry         = lg_registry,
-    exact_duplicate  = lg_registry %>% filter(exact_duplicate == "TRUE"),
-    duplicate_name   = lg_registry %>% filter(duplicate_name == "TRUE"),
-    entities         = lg_registry %>% 
-                         filter(exact_duplicate != "TRUE") %>% 
-                         select(entity_name, lg_govt_type),
-    govt_type        = lg_registry %>% 
-                         distinct(lg_govt_type) %>%
-                         arrange(lg_govt_type))
-
-rm(lg_registry)
+LG$registry_tidy <- 
+  LG$registry_tidy %>% 
+  mutate(
+    common_govt_type = 
+      case_when(
+        str_detect(lg_govt_type, regex("^Area Agency")) ~ "Area Agency",
+        lg_govt_type %in% c("Charter School", "School District") ~ "LEA",
+        lg_govt_type == "Community Reinvestment Agency" ~ "CRA",
+        lg_govt_type == "Conservation District" ~ "Conservation District",
+        lg_govt_type == "County" ~ "County",
+        lg_govt_type == "Housing Authority" ~ "Housing",
+        lg_govt_type == "Municipality" ~ "Municipality",
+        str_detect(lg_govt_type, regex("Nonprofit")) ~ "Non Profit",
+        lg_govt_type == 
+          "Independent Entity or Independent State Agency" ~ 
+          "Independent Agency",
+        lg_govt_type %in% 
+          c("Interlocal Entity", "Substance Abuse Authority") ~ 
+          "AOG or Interlocal",
+        lg_govt_type == "Local Building Authority" ~ "Local Building Authority",
+        lg_govt_type %in% 
+          c("Local District", "Special Service District") ~ "Local or SSD",
+        lg_govt_type == "Local Health Department" ~ "Health Department",
+        lg_govt_type == "Local Mental Health Authority" ~ "Mental Health",
+        str_detect(entity_name, "Circle The Wagons Inc.") ~ "Non Profit",
+        str_detect(entity_name, "City Of Moab Redevelopment Agency") ~ "CRA",
+        str_detect(entity_name, "Marysvale Town") ~ "Municipality",
+        str_detect(entity_name, "Marysvale Town Local Building Authority") ~ 
+          "Local Building Authority",
+        str_detect(entity_name, "Perry City Redevelopment Agency") ~ "CRA",
+        str_detect(entity_name, "Pleasant View City Redevelopment Agency") ~ 
+          "CRA",
+        str_detect(
+          entity_name, 
+          "Price City Urban Renewal And Community Development Agency") ~ "CRA",
+        str_detect(entity_name, "Virgin Town") ~ "Municipality",
+        str_detect(entity_name, "Weber Human Services") ~ "AOG or Interlocal",
+        str_detect(entity_name, "Wellington City Redevelopment Agency") ~ "CRA"))
 ```
-
-## Create Standard Government Types
 
 ```{r}
 lg_data$entities <- 
