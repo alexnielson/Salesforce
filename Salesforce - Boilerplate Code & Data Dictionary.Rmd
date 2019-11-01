@@ -19,7 +19,7 @@ odbc_sf  <- dbConnect(odbc::odbc(), "Salesforce")
 
 ### Fields:
 
-* Id (string):
+* Id (string): Account ID.
 * IsDeleted (boolean):
 * MasterRecordId (string):
 * Name (string): The name of the entity.
@@ -37,16 +37,13 @@ odbc_sf  <- dbConnect(odbc::odbc(), "Salesforce")
 * BillingGeocodeAccuracy (string):
 * BillingAddress (string):
 *
-*
-*
-* 
-* 
-*
-*
-*
+...
 *
 * Phone (string):
 * Fax (string):
+*
+...
+* Entity_Status__c (string): The entity's status (`Current`, `Delinquent`, `On hold`, `Suspended`, `Frozen`, `Inactive`, or `Dissolved`).
 
 ### Code
 
@@ -72,7 +69,8 @@ Account_governments <-
         'CPA Firm',
         'Health Provider',
         'Non Profits'))
-    AND a.Name <> 'test city 2'") %>% 
+    AND a.Name <> 'test city 2'
+    AND Entity_Status__c NOT IN ('Inactive', 'Dissolved')") %>% 
   as_tibble()
 
 Account_local_governments <- 
@@ -99,7 +97,8 @@ Account_local_governments <-
         'Institution of Higher Education',
         'Non Profits',
         'State of Utah (agencies/depts/comp units/ etc.)'))
-    AND a.Name <> 'test city 2'") %>% 
+    AND a.Name <> 'test city 2'
+    AND Entity_Status__c NOT IN ('Inactive', 'Dissolved')") %>% 
   as_tibble()
 ```
 
@@ -179,11 +178,11 @@ report_review__c_2018 <-
       r.Total_Revenue__c                AS total_rev
     FROM Report_Review__c               AS r
     LEFT JOIN Account                   AS a
-    ON r.Entity_Name__c = a.Id
+      ON r.Entity_Name__c = a.Id
     LEFT JOIN RecordType                AS t
-    ON r.RecordTypeID = t.Id
+      ON r.RecordTypeID = t.Id
     LEFT JOIN Report_Year__c            AS y
-    ON r.review_report_year__c = y.Id
+      ON r.review_report_year__c = y.Id
     WHERE t.Name IN (
       'AUP Checklist',
       'Large Entity Checklist',
