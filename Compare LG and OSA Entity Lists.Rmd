@@ -1,5 +1,5 @@
 ---
-title: "Fuzzy Match LG & OSA Entity Lists"
+title: "Compare LG & OSA Entity Lists"
 author: "Michael Jensen"
 output: html_notebook
 ---
@@ -31,6 +31,14 @@ LG <-
 * A .csv file containing the names of entities that are on the LG Registry and not in Salesforce.
 * A .csv file containing the names of entities that are in Salesforce and not on the LG Registry.
 * A report of any notable information I become aware of as I work with the LG Registry.
+
+```{r}
+reports <- 
+  list(
+    lg_not_in_osa = list(),
+    osa_not_in_lg = list(),
+    notable_info  = list())
+```
 
 # Libraries and Data Sources
 
@@ -64,9 +72,8 @@ OSA <-
       dbGetQuery(
         odbc_sf,
         "SELECT 
-          a.Id   AS entity_id,
           a.Name AS entity_name,
-          r.Name AS govt_type
+          r.Name AS osa_govt_type
         FROM Account         AS a
         LEFT JOIN RecordType AS r
         ON a.RecordTypeId = r.Id
@@ -86,36 +93,39 @@ OSA <-
       as_tibble())
 ```
 
-## Clean LG and OSA data
+## Tidy LG and OSA data
 
 ```{r}
-LG$invalid_names <- 
+LG$registry_tidying <- 
   LG$registry_raw %>% 
-  filter(`Entity Name` %in% c("Test", ",mnn"))
+  rename(
+    lg_govt_type = `Entity Type`,
+    entity_name  = `Entity Name`)
 
-LG$registry <-
-  LG$registry_raw %>%
-  rename(lg_govt_type = `Entity Type`,
-         entity_name  = `Entity Name`) %>% 
-  filter(!entity_name %in% c("Test", ",mnn")) %>% 
+reports$notable_info[["lg_invalid_names"]] <- 
+  LG$registry_tidying %>% 
+  filter(entity_name %in% c("Test", ",mnn"))
+
+LG$registry_tidying <-
+  LG$registry_tidying %>%
+  filter(!entity_name %in% c("Test", ",mnn")) %>%
   map_if(is.character, str_to_title) %>% 
   bind_rows() %>% 
   mutate(
     duplicate_record = duplicated(.),
     duplicate_name   = duplicated(.$entity_name))
 
-LG$duplicate_record <- 
-  LG$registry %>% 
-  filter(duplicate_record == TRUE)
+reports$notable_info[["duplicate_record"]] <- 
+  LG$registry_tidying %>% 
+  filter(duplicate_record)
 
-LG$duplicate_name <- 
-  LG$registry %>% 
-  filter(duplicate_name == TRUE)
+reports$notable_info[["duplicate_entity_name"]] <- 
+  LG$registry_tidying %>% 
+  filter(duplicate_name)
 
-LG$registry_clean <- 
-  LG$registry %>% 
-  filter(
-    duplicate_record == FALSE)
+LG$registry_tidying <- 
+  LG$registry_tidying %>% 
+  filter(!duplicate_record)
 ```
 
 ```{r}
