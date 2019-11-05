@@ -65,8 +65,11 @@ Account_governments <-
       AND IsActive = 'TRUE'
       AND Name NOT IN (
         'Community User',
+        'Component', -- This govt type contains local governments, but not ones for which we enforce compliance.
         'Court (Search Under Parent Entity)',
         'CPA Firm',
+        'Educational Foundation or Component Unit', -- Not an entity we review for compliance.
+        'Financial Institution',
         'Health Provider',
         'Non Profits'))
     AND a.Name <> 'test city 2'
@@ -90,8 +93,11 @@ Account_local_governments <-
       AND IsActive = 'TRUE'
       AND Name NOT IN (
         'Community User',
+        'Component', -- This govt type contains local governments, but not ones for which we enforce compliance.
         'Court (Search Under Parent Entity)',
         'CPA Firm',
+        'Educational Foundation or Component Unit', -- Not an entity we review for compliance.
+        'Financial Institution',
         'Health Provider',
         'Independent/Quasi State Entity',
         'Institution of Higher Education',
@@ -99,6 +105,44 @@ Account_local_governments <-
         'State of Utah (agencies/depts/comp units/ etc.)'))
     AND a.Name <> 'test city 2'
     AND Entity_Status__c NOT IN ('Inactive', 'Dissolved')") %>% 
+  as_tibble()
+
+Account_transparency_governments <- 
+  dbGetQuery(
+    odbc_sf,
+    "SELECT 
+      a.Name                  AS entity_name,
+      a.Id                    AS sf_id,
+      a.Transparency_ID__c    AS t_id,
+      a.Fiscal_Year_Begins__c AS begin_fy,
+      r.Name                  AS govt_type
+    FROM Account         AS a
+    LEFT JOIN RecordType AS r
+    ON a.RecordTypeId = r.Id
+    WHERE a.RecordTypeId IN (
+      SELECT Id
+      FROM RecordType
+      WHERE SobjectType = 'Account'
+      AND IsActive = 'TRUE'
+      AND Name NOT IN (
+        'Community User',
+        'Component', -- This govt type contains local governments, but not ones for which we enforce compliance.
+        'Court (Search Under Parent Entity)',
+        'CPA Firm',
+        'Educational Foundation or Component Unit', -- Not an entity we review for compliance.
+        'Financial Institution',
+        'Health Provider',
+        'Non Profits',
+        'State of Utah (agencies/depts/comp units/ etc.)'))
+    AND a.Name NOT IN (
+      'Intermountain Power Agency',
+      'test city 2',
+      'Utah Associated Municipal Power Systems',
+      'Utah Municipal Power Agency')
+    AND Entity_Status__c NOT IN ('Inactive', 'Dissolved')
+    AND (
+      a.Expense_Revenue_Start_Date__c <= DATE() OR
+      a.Expense_Revenue_Start_Date__c IS NULL)") %>% 
   as_tibble()
 ```
 
