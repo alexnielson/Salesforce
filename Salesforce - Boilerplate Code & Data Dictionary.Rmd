@@ -43,7 +43,8 @@ odbc_sf  <- dbConnect(odbc::odbc(), "Salesforce")
 * Fax (string):
 *
 ...
-* Entity_Status__c (string): The entity's status (`Current`, `Delinquent`, `On hold`, `Suspended`, `Frozen`, `Inactive`, or `Dissolved`).
+* Entity_Status__c (string): The entity's status
+  * Values: `Current`, `Delinquent`, `On hold`, `Suspended`, `Frozen`, `Inactive`, `Dissolved`.
 
 ### Code
 
@@ -52,10 +53,10 @@ Account_governments <-
   dbGetQuery(
     odbc_sf,
     "SELECT 
-      a.Id   AS entity_id,
+      a.Id AS entity_id,
       a.Name AS entity_name,
       r.Name AS govt_type
-    FROM Account         AS a
+    FROM Account AS a
     LEFT JOIN RecordType AS r
     ON a.RecordTypeId = r.Id
     WHERE a.RecordTypeId IN (
@@ -80,10 +81,10 @@ Account_local_governments <-
   dbGetQuery(
     odbc_sf,
     "SELECT 
-      a.Id   AS entity_id,
+      a.Id AS entity_id,
       a.Name AS entity_name,
       r.Name AS govt_type
-    FROM Account         AS a
+    FROM Account AS a
     LEFT JOIN RecordType AS r
     ON a.RecordTypeId = r.Id
     WHERE a.RecordTypeId IN (
@@ -111,14 +112,14 @@ Account_transparency_governments <-
   dbGetQuery(
     odbc_sf,
     "SELECT 
-      a.Name                  AS entity_name,
-      a.Id                    AS sf_id,
-      a.Transparency_ID__c    AS t_id,
+      a.Name AS entity_name,
+      a.Id AS sf_id,
+      a.Transparency_ID__c AS t_id,
       a.Fiscal_Year_Begins__c AS begin_fy,
-      r.Name                  AS govt_type
-    FROM Account         AS a
+      r.Name AS govt_type
+    FROM Account AS a
     LEFT JOIN RecordType AS r
-    ON a.RecordTypeId = r.Id
+      ON a.RecordTypeId = r.Id
     WHERE a.RecordTypeId IN (
       SELECT Id
       FROM RecordType
@@ -132,8 +133,7 @@ Account_transparency_governments <-
         'Educational Foundation or Component Unit', -- Not an entity we review for compliance.
         'Financial Institution',
         'Health Provider',
-        'Non Profits',
-        'State of Utah (agencies/depts/comp units/ etc.)'))
+        'Non Profits'))
     AND a.Name NOT IN (
       'Intermountain Power Agency',
       'test city 2',
@@ -143,7 +143,21 @@ Account_transparency_governments <-
     AND (
       a.Expense_Revenue_Start_Date__c <= DATE() OR
       a.Expense_Revenue_Start_Date__c IS NULL)") %>% 
-  as_tibble()
+  as_tibble() %>% 
+  mutate(
+    govt_type = 
+      if_else(
+        entity_name %in% 
+          c("State of Utah",
+            "Utah System of Higher Education - Student Loan Guarantee Program",
+            "Utah System of Higher Education - Student Loan Purchase Program",
+            "Utah System of Higher Education - Utah Educational Savings Plan dba my529",
+            "Utah System of Higher Education - Utah State Board of Regents"),
+        "Monitored State Agency",
+        govt_type)) %>% 
+  filter(govt_type != "State of Utah (agencies/depts/comp units/ etc.)") %>% 
+  # The State of Utah is required to report to Transparent Utah, but in most instances we do not monitor its data:
+  filter(entity_name != "State of Utah")
 ```
 
 ## RecordType Table
