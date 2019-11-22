@@ -13,6 +13,20 @@ library(tidyverse)
 odbc_sf  <- dbConnect(odbc::odbc(), "Salesforce")
 ```
 
+# Meta-Information
+
+Comments on the Salesforce database:
+
+* `*__c` tables
+  * Note that `c` is preceeded by two underscores.
+  * These are the tables that backup the objects of the same name in the Salesforce GUI.
+* [`*_hd` tables](https://salesforce.stackexchange.com/questions/31398/salesforce-object-with-hd-suffix)
+  * These tables have multiple records for certain events, as they track changes whenever a tracked field changes.
+  * `_hpr` is the value at the start of the date-time range.
+  * `_hst` is the value at the end of the date-time range.
+* `IsDeleted` fields
+  * What Alex and I believe is that `IsDeleted = TRUE` indicates the record is in the recyling bin, waiting to be permanently deleted. Once deleted, it should no longer appear in the table.
+
 # Database Tables
 
 ## Account Table
@@ -260,7 +274,44 @@ report_review__c_2018 <-
                total_rev)))
 ```
 
+## Report_Year__c Table
+
+### Fields
+
+* Id:
+  * Key to Reports__c.Report_Year__c.
+
+### Code
+
+```{r}
+
+```
+
+## Reports__c Table
+
+### Fields
+
+* Id:
+...
+* Report_Status__c: 
+  * Key to Report_Year__c.Id.
+
+### Code
+
+```{r}
+
+```
+
 ## Transparency_Reporting_c Table
+
+### Fields
+
+* Id:
+* IsDeleted:
+* Name: This is a string field, not a date field, though it populates with the date we run the Quarterly Compliance Report (we do our best to make it YYYY-MM-DD). 
+  * Important: For a reason we don't understand, changing this field (e.g., reformatting it from MM/DD/YYYY to YYYY-MM-DD) will cause the Transparency Compliance Status flow to re-execute, which resets the Transparent Utah compliance status for each record, for each entity. Leave it alone.
+
+### Code
 
 ```{r}
 transparency_reporting__c <- 
@@ -289,6 +340,11 @@ transparency_reporting__c <-
 
 ## Transparency_Reporting__c_hd Table
 
+### Fields
+
+
+### Code
+
 ```{r}
 transparency_reporting__c_hd <- 
   dbGetQuery(
@@ -306,6 +362,10 @@ transparency_reporting__c_hd <-
 ```
 
 ## User Names
+
+### Fields
+
+### Code
 
 ```{r}
 user_names <- 
