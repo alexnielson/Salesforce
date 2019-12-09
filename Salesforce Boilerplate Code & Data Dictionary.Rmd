@@ -5,12 +5,12 @@ output: html_notebook
 ---
 # Libraries and Data Sources
 
-```{r}
+```{r, message=FALSE}
 library(magrittr)
 library(odbc)
 library(tidyverse)
 
-odbc_sf  <- dbConnect(odbc::odbc(), "Salesforce")
+odbc_sf <- dbConnect(odbc::odbc(), "Salesforce")
 ```
 
 # Meta-Information
