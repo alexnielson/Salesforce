@@ -45,7 +45,9 @@ reports <-
 ```{r}
 library(fuzzyjoin)
 library(odbc)
-library(qdap) # Try using check_spelling to identify errors ...
+library(splitstackshape)
+library(rJava)
+library(qdap)
 library(tidyverse)
 
 odbc_sf <- dbConnect(odbc::odbc(), dsn_sf)
@@ -98,6 +100,37 @@ OSA <-
 ## Tidy
 
 ```{r}
+dictionary_osa_entity_names <- 
+  cSplit(OSA$entities_raw, "entity_name", sep = " ") %>% 
+  distinct()
+
+d <- 
+  OSA$entities_raw %>% 
+  select(entity_name) %>% 
+  cSplit(., "entity_name", sep = " ") %>% 
+  collapse()
+
+# How can I get a single vector, to use as a second dictionary?
+e <- 
+  d %>% 
+  unite(testnames)
+
+e <- 
+ d %>% 
+  as_vector()
+
+f <- 
+  e[[]]
+  
+
+class(OSA$entities_raw)
+
+spelling <- 
+  check_spelling(OSA$entities_tidying$entity_name)
+  
+```
+
+```{r}
 LG$registry_tidying <- 
   LG$registry_raw %>% 
   rename(
@@ -145,6 +178,12 @@ LG$registry_tidying <-
 LG$registry_tidy <- 
   LG$registry_tidying
 ```
+
+```{r}
+a <- check_spelling(LG$registry_raw$`Entity Name`)
+```
+
+
 
 ```{r}
 OSA$entities_tidying <- 
