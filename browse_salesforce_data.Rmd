@@ -1,0 +1,112 @@
+---
+title: "Browse Salesforce Data"
+author: "Michael Jensen"
+date: "June 2019"
+output: html_notebook
+---
+# Program Description
+
+**Purpose**
+
+Browse Salesforce data.
+
+**Input(s)**
+
+```{r}
+dsn_salesforce <- "Salesforce"
+```
+
+**Output(s)**
+
+
+
+# Libraries and Data Sources
+
+```{r}
+library(magrittr)
+library(odbc)
+library(tidyverse)
+odbc_sf <- dbConnect(odbc::odbc(), dsn_salesforce)
+rm(dsn_salesforce)
+```
+
+# Function Definitions
+
+
+
+# Execution
+
+## Entity Names
+
+```{r}
+entity_names <- 
+  dbGetQuery(
+    odbc_sf,
+    "SELECT
+      id   AS entity_id,
+      Name AS entity_name
+    FROM Account")
+```
+
+## User Names
+
+```{r}
+user_names <- 
+  dbGetQuery(
+    odbc_sf,
+    "SELECT
+      Id   AS user_id,
+      Name AS user_name
+    FROM User")
+```
+
+## Transparency_Reporting_c
+
+```{r}
+transparency_reporting__c <- 
+  dbGetQuery(
+    odbc_sf,
+    "SELECT 
+      IsDeleted        AS is_deleted,
+      Name             AS report_date_name,
+      CreatedDate      AS created_date,
+      CreatedById      AS created_by,
+      LastModifiedDate AS last_modified_date,
+      LastModifiedById AS last_modified_by,
+      Account__c       AS entity_id,
+      Status__c        AS transparency_status,
+      Id               AS id
+    FROM Transparency_Reporting__c") %>% 
+  left_join(entity_names, by = "entity_id") %>% 
+  left_join(user_names,   by = c("created_by" = "user_id")) %>% 
+  left_join(user_names,   by = c("created_by" = "user_id")) %>% 
+  rename(created_by_name       = user_name.x,
+         last_modified_by_name = user_name.y) %>% 
+  select(report_date_name, entity_name, transparency_status, created_date,
+         created_by_name, last_modified_date, last_modified_by_name, is_deleted,
+         entity_id, created_by, last_modified_by, id)
+```
+
+## Transparency_Reporting__c_hd
+
+```{r}
+transparency_reporting__c_hd <- 
+  dbGetQuery(
+    odbc_sf,
+    "SELECT 
+      ParentId AS parent_id,
+      IsDeleted AS is_deleted,
+      ValidFromDate AS valid_from_date,
+      CreatedDate AS created_date,
+      CreatedById AS created_by,
+      Status__c_hpr,
+      Status__c_hst
+    FROM Transparency_Reporting__c_hd") %>% 
+  left_join(user_names, by = c("created_by" = "user_id"))
+```
+
+# DBMS Disconnection
+
+```{r}
+dbDisconnect(odbc_sf)
+```
